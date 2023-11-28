@@ -10,16 +10,25 @@ import type { Sourcemap, SourceMapUploaderConfig } from './types'
 
 import { debug, warn, limitParallelism } from './utils'
 
-export default function BugsnagSourceMapUploaderPlugin (config: SourceMapUploaderConfig): Plugin {
+export default function BugsnagSourceMapUploaderPlugin (
+  config: SourceMapUploaderConfig,
+): Plugin {
   // eslint-disable-next-line prefer-const
   let { base, ignoredBundleExtensions = ['.css'], ...options } = config
   const uploadedMaps = new Set<string>()
 
-  if (typeof options.apiKey !== 'string' || options.apiKey.length < 1)
-    throw new Error(`[BugsnagSourceMapUploader] "apiKey" is required.\nProvided:\n${JSON.stringify(options)}`)
+  if (typeof options.apiKey !== 'string' || options.apiKey.length < 1) {
+    throw new Error(
+      `[BugsnagSourceMapUploader] "apiKey" is required.\nProvided:\n${JSON.stringify(
+        options,
+      )}`,
+    )
+  }
 
   function uploadSourcemap ({ url, source, map }: Sourcemap) {
     debug(`uploading sourcemap for "${colors.blue(url)}"`)
+    console.log(`[BugsnagSourceMapUploader] uploading sourcemap for "${url}"`)
+    console.log({ url, source, map })
     return browser.uploadOne({
       bundleUrl: url,
       bundle: source,
@@ -38,7 +47,10 @@ export default function BugsnagSourceMapUploaderPlugin (config: SourceMapUploade
     config ({ build }, { mode }) {
       return {
         build: {
-          sourcemap: build?.sourcemap !== undefined ? build.sourcemap : mode !== 'development',
+          sourcemap:
+            build?.sourcemap !== undefined
+              ? build.sourcemap
+              : mode !== 'development',
         },
       }
     },
@@ -57,31 +69,37 @@ export default function BugsnagSourceMapUploaderPlugin (config: SourceMapUploade
         const sourcePath = mapPath.replace(/\.map$/, '')
         const sourceFilename = resolve(outputDir, sourcePath)
 
-        if (ignoredBundleExtensions.includes(extname(sourcePath)))
-          return []
+        if (ignoredBundleExtensions.includes(extname(sourcePath))) return []
 
         if (!existsSync(sourceFilename)) {
           warn(`no corresponding source found for "${mapPath}"`)
           return []
         }
 
-        return [{
-          map: resolve(outputDir, mapPath),
-          source: sourceFilename,
-          url: `${base}${sourcePath}`,
-        }]
+        return [
+          {
+            map: resolve(outputDir, mapPath),
+            source: sourceFilename,
+            url: `${base}${sourcePath}`,
+          },
+        ]
       }
 
       const files = await glob('./**/*.map', { cwd: outputDir })
+      console.log(JSON.stringify(files, null, 2))
       const sourcemaps = files.flatMap(sourcemapFromFile)
       // Exclude sourcemaps that have already been uploaded via a previons
       // writeBundle call, e.g. by vite-plugin-legacy.
-      const newSourcemaps = sourcemaps.filter(({ map }) => !uploadedMaps.has(map))
+      const newSourcemaps = sourcemaps.filter(
+        ({ map }) => !uploadedMaps.has(map),
+      )
 
       newSourcemaps.forEach(({ map }) => uploadedMaps.add(map))
 
       await Promise.all(
-        newSourcemaps.map(sourcemap => limitParallelism(() => uploadSourcemap(sourcemap))),
+        newSourcemaps.map(sourcemap =>
+          limitParallelism(() => uploadSourcemap(sourcemap)),
+        ),
       )
     },
   }
